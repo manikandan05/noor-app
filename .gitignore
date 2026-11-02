@@ -1,0 +1,21 @@
+# Signing secrets - NEVER commit these
+**/keystore.properties
+**/*.jks
+# ***.keystore
+
+# Android / Gradle build output and caches
+build/
+.gradle/
+**/.kotlin/
+**/local.properties
+**/captures/
+**/*.apk
+**/*.aab
+**/*.hprof
+
+# IDE
+**/.idea/
+**/*.iml
+
+# macOS
+**/.DS_Store

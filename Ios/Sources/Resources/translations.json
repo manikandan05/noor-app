@@ -1,0 +1,85 @@
+{
+ "schemaVersion": 1,
+ "translations": [
+  {
+   "lessonId": "honesty_001",
+   "languageCode": "ar",
+   "title": "اختر الصدق",
+   "takeaway": "قل الحقيقة حتى عندما يكون ذلك صعبًا.",
+   "body": "عندما تخطئ، اعترف بذلك بصدق. الصدق يبني الثقة ويجعل الآخرين يعاملونك بإنصاف.",
+   "practicalAction": "صحّح خطأً واحدًا علنًا بدلًا من إخفائه.",
+   "reflectionQuestion": "كيف يمكن للصدق أن يحسّن إحدى علاقاتك اليوم؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "kindness_001",
+   "languageCode": "ar",
+   "title": "لطف صغير",
+   "takeaway": "قد يغيّر عمل لطيف صغير يوم إنسان كاملًا.",
+   "body": "اللطف لا يحتاج إلى أن يكون كبيرًا. تحية أو جواب صبور أو وجبة مشتركة قد تخفف عن غيرك.",
+   "practicalAction": "افعل عملًا لطيفًا واحدًا لجارك أو زميلك دون أن يُطلب منك.",
+   "reflectionQuestion": "من حولك يحتاج إلى كلمة تشجيع اليوم؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "patience_001",
+   "languageCode": "ar",
+   "title": "توقّف قبل أن تردّ",
+   "takeaway": "الصبر أن تختار ردًّا هادئًا بدل ردٍّ متسرّع.",
+   "body": "عندما يضايقك أمر ما، فإن وقفة قصيرة تحوّل الغضب إلى تفهّم.",
+   "practicalAction": "خذ ثلاثة أنفاس بطيئة قبل الرد على ما يزعجك.",
+   "reflectionQuestion": "أي موقف يختبر صبرك أكثر؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "gratitude_001",
+   "languageCode": "ar",
+   "title": "عدّ ما لديك",
+   "takeaway": "ينمو الشكر حين تلاحظ ما هو جيد بالفعل.",
+   "body": "سمِّ أشياء محددة سارت جيدًا اليوم. ملاحظتها تجعل شكرك صادقًا وينعكس على معاملتك للآخرين.",
+   "practicalAction": "اشكر شخصًا ما وجهًا لوجه اليوم.",
+   "reflectionQuestion": "ما الأشياء الثلاثة التي كثيرًا ما تغفل عنها؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "generosity_001",
+   "languageCode": "ar",
+   "title": "أعطِ ما تستطيع",
+   "takeaway": "يُقاس الكرم بالإخلاص لا بالمقدار.",
+   "body": "الوقت والاهتمام والمهارات هدايا أيضًا، وليس المال وحده.",
+   "practicalAction": "شارك شيئًا نافعًا مع من يحتاجه.",
+   "reflectionQuestion": "ما الذي تستطيع أن تقدمه بقليل من الكلفة وكثير من النفع؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "respect_for_parents_001",
+   "languageCode": "ar",
+   "title": "اطمئنّ على أهلك",
+   "takeaway": "يظهر برّ الوالدين في الاهتمام اليومي.",
+   "body": "اتصال أو زيارة أو إصغاء دون مقاطعة؛ عادات صغيرة تُظهر رعاية لا تبلغها الكلمات وحدها.",
+   "practicalAction": "اتصل بأحد والديك أو بقريب كبير في السن أو زره.",
+   "reflectionQuestion": "متى آخر مرة أصغيت فيها حقًا إلى أحد كبار السن؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "forgiveness_001",
+   "languageCode": "ar",
+   "title": "تخلَّ عن الضغينة",
+   "takeaway": "التسامح يحرّر المسامِح أيضًا.",
+   "body": "حمل الضغينة ثقيل. التسامح لا يعني تبرير الأذى، بل رفض أن يتحكم فينا.",
+   "practicalAction": "تخلَّ اليوم عن مظلمة صغيرة واحدة.",
+   "reflectionQuestion": "ما الذي سيتغير لو تركت هذا الأمر؟",
+   "translationStatus": "machine_translated"
+  },
+  {
+   "lessonId": "responsibility_001",
+   "languageCode": "ar",
+   "title": "تحمّل نصيبك",
+   "takeaway": "تبدأ المسؤولية بأداء واجباتك على أكمل وجه.",
+   "body": "الالتزام في الأمور الصغيرة يجعلك شخصًا يمكن الاعتماد عليه.",
+   "practicalAction": "أنهِ مهمة واحدة كنت تؤجلها.",
+   "reflectionQuestion": "أي التزام كنت تتجنبه؟",
+   "translationStatus": "machine_translated"
+  }
+ ]
+}
