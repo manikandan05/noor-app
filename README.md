@@ -10,6 +10,18 @@ Noor is an Islamic calendar, prayer times and daily wisdom app, with an Android 
 - **Settings:** language, theme, colour palette, reminders and Hijri date adjustment (−2 to +2 days).
 - **Languages:** English, Arabic and Urdu, with right-to-left layout support.
 
+## Screenshots
+Android app, captured on an emulator (prayer times shown for Chennai).
+
+| Home | Calendar | Prayer |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/home.png" width="220" alt="Home"> | <img src="docs/screenshots/calendar.png" width="220" alt="Calendar"> | <img src="docs/screenshots/prayer.png" width="220" alt="Prayer times"> |
+
+| Wisdom | Settings |
+|:---:|:---:|
+| <img src="docs/screenshots/wisdom.png" width="220" alt="Wisdom"> | <img src="docs/screenshots/settings.png" width="220" alt="Settings"> |
+
+
 ## Repository layout
 | Folder | Contents |
 |---|---|
