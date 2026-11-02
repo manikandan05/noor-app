@@ -17,10 +17,15 @@ Android app, captured on an emulator (prayer times shown for Chennai).
 |:---:|:---:|:---:|
 | <img src="docs/screenshots/home.png" width="220" alt="Home"> | <img src="docs/screenshots/calendar.png" width="220" alt="Calendar"> | <img src="docs/screenshots/prayer.png" width="220" alt="Prayer times"> |
 
-| Wisdom | Settings |
-|:---:|:---:|
-| <img src="docs/screenshots/wisdom.png" width="220" alt="Wisdom"> | <img src="docs/screenshots/settings.png" width="220" alt="Settings"> |
+| Wisdom | Settings | Notification |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/wisdom.png" width="220" alt="Wisdom"> | <img src="docs/screenshots/settings.png" width="220" alt="Settings"> | <img src="docs/screenshots/notification.png" width="220" alt="Daily wisdom notification"> |
 
+Arabic (right-to-left layout):
+
+| Home (Arabic) | Wisdom (Arabic) |
+|:---:|:---:|
+| <img src="docs/screenshots/home-ar.png" width="220" alt="Home in Arabic"> | <img src="docs/screenshots/wisdom-ar.png" width="220" alt="Wisdom in Arabic"> |
 
 ## Repository layout
 | Folder | Contents |
