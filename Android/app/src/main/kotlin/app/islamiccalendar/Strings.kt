@@ -75,6 +75,8 @@ private val T: Map<String, List<String>> = mapOf(
     "saved" to s("Saved ★", "تم الحفظ ★", "محفوظ ★"),
     "practice" to s("Practice: ", "التطبيق: ", "عمل: "),
     "reflect" to s("Reflect: ", "تأمّل: ", "غور کریں: "),
+    "min_suffix" to s("min", "دقيقة", "منٹ"),
+    "min_short" to s("m", "د", "منٹ"),
     // settings
     "settings_sub" to s("Language, theme, reminders and privacy", "اللغة والمظهر والتذكير والخصوصية", "زبان، تھیم، یاد دہانی اور رازداری"),
     "language" to s("Language", "اللغة", "زبان"),

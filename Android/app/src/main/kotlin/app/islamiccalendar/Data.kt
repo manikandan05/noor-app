@@ -11,12 +11,20 @@ data class Event(val id: String, val names: Map<String, String>, val category: S
 data class Lesson(val id: String, val type: String, val category: String, val title: String, val takeaway: String, val body: String,
                   val action: String, val question: String?, val minutes: Int, val machineTranslated: Boolean = false)
 
-val typeLabels = mapOf("quran" to "Qur'an passage", "hadith" to "Hadith",
-    "moral_reflection" to "Moral reflection (not a religious text)", "illustrative_story" to "Illustrative story (fictional)")
-/** Full label for a contentType (keeps disclaimers); unknown types fall back to a prettified id. */
-fun typeFull(k: String) = typeLabels[k] ?: k.replace('_', ' ').replaceFirstChar { it.uppercase() }
-/** Short label for chips/cards. */
-fun typeName(k: String) = typeFull(k).substringBefore(" (")
+fun typeFull(k: String, lang: String = "en"): String = when (k) {
+    "quran" -> when (lang) { "ar" -> "آية قرآنية"; "ur" -> "قرآنی آیت"; else -> "Qur'an passage" }
+    "hadith" -> when (lang) { "ar" -> "حديث شريف"; "ur" -> "حدیث نبوی"; else -> "Hadith" }
+    "moral_reflection" -> when (lang) { "ar" -> "تأمل أخلاقي (ليس نصاً دينياً)"; "ur" -> "اخلاقی غور و فکر (غیر مذہبی متن)"; else -> "Moral reflection (not a religious text)" }
+    "illustrative_story" -> when (lang) { "ar" -> "قصة للعبرة (تمثيلية)"; "ur" -> "سبق آموز کہانی (تمثیلی)"; else -> "Illustrative story (fictional)" }
+    else -> k.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
+fun typeName(k: String, lang: String = "en"): String = when (k) {
+    "quran" -> when (lang) { "ar" -> "القرآن"; "ur" -> "قرآن"; else -> "Qur'an" }
+    "hadith" -> when (lang) { "ar" -> "حديث"; "ur" -> "حدیث"; else -> "Hadith" }
+    "moral_reflection" -> when (lang) { "ar" -> "تأمل أخلاقي"; "ur" -> "اخلاقی فکر"; else -> "Moral reflection" }
+    "illustrative_story" -> when (lang) { "ar" -> "قصة للعبرة"; "ur" -> "سبق آموز کہانی"; else -> "Illustrative story" }
+    else -> typeFull(k, lang).substringBefore(" (")
+}
 
 val hijriMonths = listOf("Muharram", "Safar", "Rabi' al-awwal", "Rabi' al-thani", "Jumada al-awwal", "Jumada al-thani",
     "Rajab", "Sha'ban", "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah")
@@ -40,15 +48,16 @@ class Content(private val ctx: Context) {
         val r = o.getJSONObject("hijriDateRule")
         Event(o.getString("id"), o.map("names"), o.getString("category"), r.getInt("month"), r.getInt("day"),
             o.map("description")["en"] ?: "", o.getJSONArray("traditionTags").let { t -> (0 until t.length()).map(t::getString) }) } }
-    private val base = read("lessons").getJSONArray("lessons").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
-        Lesson(o.getString("id"), o.getString("contentType"), o.getString("categoryId"), o.getString("title"), o.getString("takeaway"),
-            o.getString("body"), o.getString("practicalAction"), o.optString("reflectionQuestion").ifEmpty { null }, o.getInt("readingTimeMinutes")) } }
-    private val tr = read("translations").getJSONArray("translations").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
-    fun lessons(lang: String): List<Lesson> = if (lang == "en") base else base.map { l ->
-        tr.firstOrNull { it.getString("lessonId") == l.id && it.getString("languageCode") == lang }?.let {
-            l.copy(title = it.getString("title"), takeaway = it.getString("takeaway"), body = it.getString("body"),
-                action = it.getString("practicalAction"), question = it.optString("reflectionQuestion").ifEmpty { null },
-                machineTranslated = it.getString("translationStatus") == "machine_translated") } ?: l }
+    private fun parseLessons(n: String) = runCatching {
+        read(n).getJSONArray("lessons").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            Lesson(o.getString("id"), o.getString("contentType"), o.getString("categoryId"), o.getString("title"), o.getString("takeaway"),
+                o.getString("body"), o.getString("practicalAction"), o.optString("reflectionQuestion").ifEmpty { null }, o.getInt("readingTimeMinutes")) } }
+    }.getOrNull()
+    private val base = parseLessons("lessons_en") ?: emptyList()
+    private val cache = mutableMapOf<String, List<Lesson>>()
+    fun lessons(lang: String): List<Lesson> = cache.getOrPut(lang) {
+        if (lang == "en") base else (parseLessons("lessons_$lang") ?: base)
+    }
 }
 
 class AppState(ctx: Context) {

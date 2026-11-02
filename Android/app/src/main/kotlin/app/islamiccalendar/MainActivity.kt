@@ -558,13 +558,14 @@ private fun clampDate(d: LocalDate): LocalDate = when {
 }
 
 @Composable fun Wisdom(c: Content, st: AppState) {
+    val lang = st.lang.value
     var q by remember { mutableStateOf("") }
-    var cat by remember { mutableStateOf<String?>(null) }
-    var type by remember { mutableStateOf<String?>(null) }
+    var cat by remember(lang) { mutableStateOf<String?>(null) }
+    var type by remember(lang) { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<Lesson?>(null) }
     var isHorizontalCards by remember { mutableStateOf(false) }
 
-    val all = c.lessons(st.lang.value)
+    val all = remember(lang) { c.lessons(lang) }
     val shown = all.filter { (cat == null || it.category == cat) && (type == null || it.type == type) &&
         (q.isBlank() || listOf(it.title, it.takeaway, it.body).any { s -> s.contains(q, true) }) }
     open?.let { LessonDialog(it, st) { open = null } }
@@ -610,7 +611,7 @@ private fun clampDate(d: LocalDate): LocalDate = when {
         ) {
             item { ThemedChip(type == null, { type = null }, { Text(t("any_type")) }) }
             items(all.map { it.type }.distinct()) { k ->
-                ThemedChip(type == k, { type = k }, { Text(typeName(k)) })
+                ThemedChip(type == k, { type = k }, { Text(typeName(k, lang)) })
             }
         }
 
@@ -642,7 +643,7 @@ private fun clampDate(d: LocalDate): LocalDate = when {
                             Text(t("practice") + l.action, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    "${typeName(l.type)} · ${l.minutes}m",
+                                    "${typeName(l.type, lang)} · ${l.minutes} ${t("min_short")}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -665,7 +666,7 @@ private fun clampDate(d: LocalDate): LocalDate = when {
                         Text(l.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(l.takeaway, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                         Text(
-                            "${typeLabels[l.type]} · ${l.minutes} min" + if (l.id in st.saved) " · ★" else "",
+                            "${typeFull(l.type, lang)} · ${l.minutes} ${t("min_suffix")}" + if (l.id in st.saved) " · ★" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -681,7 +682,7 @@ private fun clampDate(d: LocalDate): LocalDate = when {
         confirmButton = { TextButton(close) { Text(t("done")) } },
         dismissButton = { TextButton({ st.toggleSaved(l.id) }) { Text(if (l.id in st.saved) t("saved") else t("save")) } },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(typeFull(l.type), style = MaterialTheme.typography.labelMedium)
+            Text(typeFull(l.type, st.lang.value), style = MaterialTheme.typography.labelMedium)
             if (l.machineTranslated) Text("Machine-translated; awaiting human review.", color = MaterialTheme.colorScheme.tertiary)
             Text(l.takeaway, style = MaterialTheme.typography.titleMedium); Text(l.body)
             Text(t("practice") + l.action, fontWeight = FontWeight.SemiBold); l.question?.let { Text(t("reflect") + it) } } })
