@@ -1,9 +1,13 @@
 package app.islamiccalendar
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -127,6 +131,8 @@ val Palettes = listOf(
 )
 
 val PalettesMap: Map<String, AppPalette> = Palettes.associateBy { it.id }
+/** Palettes available without Premium (the first two). Every other palette is a Premium feature. */
+val FreePaletteIds: Set<String> = Palettes.take(2).map { it.id }.toSet()
 
 val LocalPalette = compositionLocalOf { Palettes[0] }
 
@@ -134,6 +140,20 @@ val heroBrush: Brush @Composable get() = LocalPalette.current.heroBrush
 val Accent: Color @Composable get() = LocalPalette.current.accent
 
 @Composable fun bgBrush(): Brush = LocalPalette.current.bgBrush(LocalDark.current)
+
+/** Primary-to-secondary gradient used for accents (titles, badges, nav indicator, progress rings). */
+val accentBrush: Brush @Composable get() = MaterialTheme.colorScheme.let { Brush.linearGradient(listOf(it.secondary, it.primary)) }
+
+/** Page background: the palette's vertical gradient plus two soft radial glows, so every page feels layered rather than flat. */
+@Composable fun Modifier.appBackground(): Modifier {
+    val p = LocalPalette.current; val dark = LocalDark.current
+    val glowA = (if (dark) p.darkPrimary else p.lightPrimary).copy(alpha = if (dark) 0.22f else 0.16f)
+    val glowB = (if (dark) p.darkSecondary else p.lightSecondary).copy(alpha = if (dark) 0.20f else 0.14f)
+    return background(p.bgBrush(dark)).drawBehind {
+        drawRect(Brush.radialGradient(listOf(glowA, Color.Transparent), Offset(size.width * 0.1f, size.height * 0.04f), size.width * 0.95f))
+        drawRect(Brush.radialGradient(listOf(glowB, Color.Transparent), Offset(size.width * 0.95f, size.height * 0.72f), size.width * 1.05f))
+    }
+}
 
 @Composable fun AppTheme(dark: Boolean, palette: AppPalette = LocalPalette.current, content: @Composable () -> Unit) {
     val cs = if (dark) darkColorScheme(

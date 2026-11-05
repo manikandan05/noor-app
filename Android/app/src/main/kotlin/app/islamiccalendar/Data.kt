@@ -11,6 +11,23 @@ data class Event(val id: String, val names: Map<String, String>, val category: S
 data class Lesson(val id: String, val type: String, val category: String, val title: String, val takeaway: String, val body: String,
                   val action: String, val question: String?, val minutes: Int, val machineTranslated: Boolean = false)
 
+data class DuaChapter(val id: String, val icon: String, val names: Map<String, String>) { fun name(l: String) = names[l] ?: names["en"] ?: id }
+data class Dua(val id: String, val chapter: String, val titles: Map<String, String>, val arabic: String, val translit: String,
+               val meaning: String, val virtue: String?, val source: String) { fun title(l: String) = titles[l] ?: titles["en"] ?: id }
+data class SurahInfo(val n: Int, val ar: String, val en: String, val meaning: String, val ayahs: Int, val meccan: Boolean)
+class SurahText(val arabic: List<String>, val english: List<String>, val translit: List<String>)
+
+/** Fixed dhikr set for the Tasbih counter: Arabic, transliteration, meaning and default target. */
+data class Dhikr(val arabic: String, val translit: String, val meaning: String, val target: Int)
+val DhikrList = listOf(
+    Dhikr("سُبْحَانَ اللَّهِ", "SubhanAllah", "Glory be to Allah", 33),
+    Dhikr("الْحَمْدُ لِلَّهِ", "Alhamdulillah", "All praise is for Allah", 33),
+    Dhikr("اللَّهُ أَكْبَرُ", "Allahu Akbar", "Allah is The Greatest", 33),
+    Dhikr("لَا إِلَٰهَ إِلَّا اللَّهُ", "La ilaha illallah", "There is no god but Allah", 100),
+    Dhikr("أَسْتَغْفِرُ اللَّهَ", "Astaghfirullah", "I seek forgiveness from Allah", 100),
+    Dhikr("اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ", "Allahumma salli 'ala Muhammad", "O Allah, send blessings upon Muhammad", 100)
+)
+
 fun typeFull(k: String, lang: String = "en"): String = when (k) {
     "quran" -> when (lang) { "ar" -> "آية قرآنية"; "ur" -> "قرآنی آیت"; else -> "Qur'an passage" }
     "hadith" -> when (lang) { "ar" -> "حديث شريف"; "ur" -> "حدیث نبوی"; else -> "Hadith" }
@@ -53,6 +70,31 @@ class Content(private val ctx: Context) {
             Lesson(o.getString("id"), o.getString("contentType"), o.getString("categoryId"), o.getString("title"), o.getString("takeaway"),
                 o.getString("body"), o.getString("practicalAction"), o.optString("reflectionQuestion").ifEmpty { null }, o.getInt("readingTimeMinutes")) } }
     }.getOrNull()
+    val duaChapters: List<DuaChapter> = runCatching {
+        read("duas").getJSONArray("chapters").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            DuaChapter(o.getString("id"), o.getString("icon"), o.map("names")) } }
+    }.getOrDefault(emptyList())
+    val duas: List<Dua> = runCatching {
+        read("duas").getJSONArray("duas").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            Dua(o.getString("id"), o.getString("chapter"), o.map("titles"), o.getString("arabic"), o.getString("translit"),
+                o.getString("meaning"), o.optString("virtue").ifEmpty { null }, o.getString("source")) } }
+    }.getOrDefault(emptyList())
+
+    /** Quran data is bundled under assets/quran (no network). The index is small; each surah is read on demand. */
+    val surahs: List<SurahInfo> = runCatching {
+        ctx.assets.open("quran/index.json").bufferedReader().use { JSONObject(it.readText()) }.getJSONArray("surahs").let { a ->
+            (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+                SurahInfo(o.getInt("n"), o.getString("ar"), o.getString("en"), o.getString("m"), o.getInt("c"), o.getString("r") == "M") } }
+    }.getOrDefault(emptyList())
+    private val surahCache = mutableMapOf<Int, SurahText?>()
+    fun surah(n: Int): SurahText? = surahCache.getOrPut(n) {
+        runCatching {
+            val o = ctx.assets.open("quran/s%03d.json".format(n)).bufferedReader().use { JSONObject(it.readText()) }
+            fun list(k: String) = o.getJSONArray(k).let { a -> (0 until a.length()).map(a::getString) }
+            SurahText(list("a"), list("e"), list("t"))
+        }.getOrNull()
+    }
+
     private val base = parseLessons("lessons_en") ?: emptyList()
     private val cache = mutableMapOf<String, List<Lesson>>()
     fun lessons(lang: String): List<Lesson> = cache.getOrPut(lang) {
@@ -97,6 +139,52 @@ class AppState(ctx: Context) {
     fun setPalette(v: String) { palette.value = v; p.edit().putString("palette", v).apply() }
     fun setRemind(v: Boolean) { remind.value = v; p.edit().putBoolean("remind", v).apply() }
     fun setTime(h: Int, m: Int) { hour.intValue = h; minute.intValue = m; p.edit().putInt("hour", h).putInt("minute", m).apply() }
+    // Daily prayer tracker: keys like "2025-08-25:fajr". Only on this device.
+    val prayed = mutableStateListOf<String>().apply { addAll(p.getStringSet("prayed", emptySet())!!) }
+    fun prayedOn(d: LocalDate): Set<String> = prayed.filter { it.startsWith("$d:") }.map { it.substringAfter(':') }.toSet()
+    private fun savePrayed() { p.edit().putStringSet("prayed", prayed.toSet()).apply() }
+    fun togglePrayed(d: LocalDate, key: String) { val k = "$d:$key"; if (!prayed.remove(k)) prayed.add(k); savePrayed() }
+    fun markAllPrayed(d: LocalDate, keys: List<String>) { keys.forEach { k -> "$d:$k".let { if (it !in prayed) prayed.add(it) } }; savePrayed() }
+    val qiblaSkin = mutableStateOf(p.getString("qibla_skin", "green")!!)
+    fun setQiblaSkin(v: String) { qiblaSkin.value = v; p.edit().putString("qibla_skin", v).apply() }
+
+    // Quran: last read position, bookmarks ("surah:ayah"), reader theme, and minutes read today (goal tracked per day).
+    val qSurah = mutableIntStateOf(p.getInt("q_surah", 1))
+    val qAyah = mutableIntStateOf(p.getInt("q_ayah", 1))
+    val qHasRead = mutableStateOf(p.getBoolean("q_has_read", false))
+    val qTheme = mutableStateOf(p.getString("q_theme", "modern")!!)
+    val qBookmarks = mutableStateListOf<String>().apply { addAll(p.getStringSet("q_bm", emptySet())!!) }
+    val qRecents = mutableStateListOf<String>().apply { addAll((p.getString("q_recent", "") ?: "").split(",").filter { it.isNotBlank() }) }
+    val qGoalMin = mutableIntStateOf(p.getInt("q_goal", 5))
+    val qReadSecs = mutableIntStateOf(if (p.getString("q_read_day", "") == LocalDate.now().toString()) p.getInt("q_read_secs", 0) else 0)
+    fun setQTheme(v: String) { qTheme.value = v; p.edit().putString("q_theme", v).apply() }
+    fun setQGoal(v: Int) { qGoalMin.intValue = v.coerceIn(1, 120); p.edit().putInt("q_goal", qGoalMin.intValue).apply() }
+    fun saveQPosition(s: Int, a: Int) {
+        qSurah.intValue = s; qAyah.intValue = a; qHasRead.value = true
+        qRecents.remove("$s:$a"); qRecents.add(0, "$s:$a"); while (qRecents.size > 8) qRecents.removeAt(qRecents.size - 1)
+        p.edit().putInt("q_surah", s).putInt("q_ayah", a).putBoolean("q_has_read", true).putString("q_recent", qRecents.joinToString(",")).apply()
+    }
+    fun toggleQBookmark(s: Int, a: Int) { val k = "$s:$a"; if (!qBookmarks.remove(k)) qBookmarks.add(k); p.edit().putStringSet("q_bm", qBookmarks.toSet()).apply() }
+    fun addReadSeconds(n: Int) {
+        qReadSecs.intValue += n
+        p.edit().putString("q_read_day", LocalDate.now().toString()).putInt("q_read_secs", qReadSecs.intValue).apply()
+    }
+
+    // Duas and Tasbih.
+    val duaSaved = mutableStateListOf<String>().apply { addAll(p.getStringSet("dua_saved", emptySet())!!) }
+    val duaRecents = mutableStateListOf<String>().apply { addAll((p.getString("dua_recent", "") ?: "").split(",").filter { it.isNotBlank() }) }
+    fun toggleDuaSaved(id: String) { if (!duaSaved.remove(id)) duaSaved.add(id); p.edit().putStringSet("dua_saved", duaSaved.toSet()).apply() }
+    fun touchDua(id: String) {
+        duaRecents.remove(id); duaRecents.add(0, id); while (duaRecents.size > 8) duaRecents.removeAt(duaRecents.size - 1)
+        p.edit().putString("dua_recent", duaRecents.joinToString(",")).apply()
+    }
+    val tasbihCount = mutableIntStateOf(p.getInt("tasbih_count", 0))
+    val tasbihIdx = mutableIntStateOf(p.getInt("tasbih_idx", 0))
+    val tasbihTarget = mutableIntStateOf(p.getInt("tasbih_target", 33))
+    fun setTasbih(count: Int) { tasbihCount.intValue = count; p.edit().putInt("tasbih_count", count).apply() }
+    fun setTasbihDhikr(i: Int) { tasbihIdx.intValue = i; tasbihCount.intValue = 0; p.edit().putInt("tasbih_idx", i).putInt("tasbih_count", 0).apply() }
+    fun setTasbihTarget(v: Int) { tasbihTarget.intValue = v; p.edit().putInt("tasbih_target", v).apply() }
+
     val onboarded = mutableStateOf(p.getBoolean("onboarded", false))
     fun finishOnboarding() { onboarded.value = true; p.edit().putBoolean("onboarded", true).apply() }
     val saved = mutableStateListOf<String>().apply { addAll(p.getStringSet("saved", emptySet())!!) }

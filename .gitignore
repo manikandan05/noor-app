@@ -19,3 +19,6 @@ build/
 
 # macOS
 **/.DS_Store
+# Android device bug reports (contain device logs and may include secrets)
+bugreport-*.zip
+bugreport-*.txt

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required on Android 11+ to discover and bind to installed Text-to-Speech engines -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Advertising ID, required by AdMob on Android 13+. -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>

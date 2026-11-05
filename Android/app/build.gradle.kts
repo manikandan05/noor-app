@@ -35,4 +35,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("com.google.android.gms:play-services-ads:25.5.0")
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 }

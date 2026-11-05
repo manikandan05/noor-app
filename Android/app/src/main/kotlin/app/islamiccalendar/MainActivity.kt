@@ -1,6 +1,9 @@
 package app.islamiccalendar
 import android.Manifest
 import android.app.TimePickerDialog
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -16,12 +19,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
@@ -55,17 +63,33 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dark = when (st.theme.value) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
             val lang = st.lang.value
-            val curPalette = PalettesMap[st.palette.value] ?: Palettes[0]
+            // A premium palette saved earlier falls back to Classic once Premium is no longer active.
+            val savedPalette = PalettesMap[st.palette.value] ?: Palettes[0]
+            val curPalette = if (savedPalette.id in FreePaletteIds || Billing.isPremium) savedPalette else Palettes[0]
             CompositionLocalProvider(
                 LocalLang provides lang,
                 LocalDark provides dark,
                 LocalPalette provides curPalette,
                 LocalLayoutDirection provides if (isRtl(lang)) LayoutDirection.Rtl else LayoutDirection.Ltr
             ) {
-                AppTheme(dark, curPalette) { if (st.onboarded.value) Root(content, st) else Onboarding(st) }
+                AppTheme(dark, curPalette) { if (st.onboarded.value) Root(content, st) else Onboarding(st); PaywallDialog(); UpdateReadyDialog() }
             }
         }
+        Billing.init(this)
         Ads.init(this)
+        AppUpdate.init(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Picks up cancellation, renewal, refund or revoke done in Google Play while the app was in the background.
+        Billing.refresh()
+        AppUpdate.check(this)
+    }
+
+    override fun onDestroy() {
+        AppUpdate.release()
+        super.onDestroy()
     }
 }
 
@@ -74,11 +98,17 @@ class MainActivity : ComponentActivity() {
     val m = modifier.fillMaxWidth().clip(shape)
     val heroBg = heroBrush
     val accentColor = Accent
+    val cs = MaterialTheme.colorScheme
+    val dark = LocalDark.current
+    // Cards are frosted glass: a soft top-to-bottom surface gradient with a bright-to-faint gradient rim.
+    val glass = Brush.verticalGradient(listOf(cs.surface.copy(alpha = if (dark) 0.92f else 0.96f), cs.surface.copy(alpha = if (dark) 0.74f else 0.80f)))
+    val rim = Brush.linearGradient(listOf(cs.primary.copy(alpha = if (dark) 0.40f else 0.30f), cs.secondary.copy(alpha = 0.06f)))
     Column(if (hero) m.background(heroBg).drawBehind {
-                drawCircle(Color.White.copy(alpha = 0.10f), size.height * 0.9f, Offset(size.width, 0f))
-                drawCircle(accentColor.copy(alpha = 0.20f), size.height * 0.5f, Offset(0f, size.height)) }.padding(22.dp)
-           else m.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
-                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)), shape).padding(20.dp),
+                drawCircle(Color.White.copy(alpha = 0.12f), size.height * 0.9f, Offset(size.width, 0f))
+                drawCircle(accentColor.copy(alpha = 0.24f), size.height * 0.55f, Offset(0f, size.height))
+                drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.10f), Color.Transparent), endY = size.height * 0.5f)) }
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)), shape).padding(22.dp)
+           else m.background(glass).border(BorderStroke(1.dp, rim), shape).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         CompositionLocalProvider(LocalContentColor provides if (hero) Color.White else MaterialTheme.colorScheme.onSurface) { content() }
     }
@@ -89,7 +119,7 @@ class MainActivity : ComponentActivity() {
         color = MaterialTheme.colorScheme.tertiary)
 
 @Composable fun PageTitle(t: String, sub: String) = Column(Modifier.padding(bottom = 4.dp)) {
-    Text(t, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+    Text(t, style = MaterialTheme.typography.headlineMedium.copy(brush = accentBrush), fontWeight = FontWeight.ExtraBold)
     Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)) }
 
 /** Palette-themed filter chip with high-contrast text in both selected and unselected states. */
@@ -111,19 +141,94 @@ class MainActivity : ComponentActivity() {
     )
 }
 
+@Composable fun VerticalListIcon(tint: Color, modifier: Modifier = Modifier.size(18.dp)) {
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val h = 2.dp.toPx()
+        val w = size.width
+        val barH = size.height
+        val gap = (barH - 3 * h) / 4f
+        for (i in 0..2) {
+            val y = gap + i * (h + gap)
+            drawRoundRect(
+                color = tint,
+                topLeft = Offset(1.dp.toPx(), y),
+                size = androidx.compose.ui.geometry.Size(w - 2.dp.toPx(), h),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+        }
+    }
+}
+
+@Composable fun HorizontalCardsIcon(tint: Color, modifier: Modifier = Modifier.size(18.dp)) {
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val cardWidth = w * 0.54f
+        val cardHeight = h * 0.78f
+        val top = (h - cardHeight) / 2f
+        val left = (w - cardWidth) / 2f
+        val corner = 2.dp.toPx()
+
+        // Left peek card
+        if (left > 2.dp.toPx()) {
+            drawRoundRect(
+                color = tint.copy(alpha = 0.4f),
+                topLeft = Offset(0f, top + 1.5.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(left - 2.dp.toPx(), cardHeight - 3.dp.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
+            )
+        }
+
+        // Center card
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(left, top),
+            size = androidx.compose.ui.geometry.Size(cardWidth, cardHeight),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.8.dp.toPx())
+        )
+
+        // Right peek card
+        val rightStart = left + cardWidth + 2.dp.toPx()
+        if (w > rightStart) {
+            drawRoundRect(
+                color = tint.copy(alpha = 0.4f),
+                topLeft = Offset(rightStart, top + 1.5.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(w - rightStart, cardHeight - 3.dp.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
+            )
+        }
+    }
+}
+
 @Composable fun Root(c: Content, st: AppState) {
     var tab by remember { mutableIntStateOf(0) }
-    val items = listOf("home" to "🌙", "calendar" to "📅", "prayer" to "🕌", "wisdom" to "📖", "settings" to "⚙️")
-    Scaffold(containerColor = Color.Transparent, modifier = Modifier.background(bgBrush()),
-        bottomBar = { Column { AdSlot(); NavigationBar(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)) {
-            val navColors = NavigationBarItemDefaults.colors(
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
-            items.forEachIndexed { i, (k, e) -> NavigationBarItem(tab == i, { tab = i }, { Text(e) }, label = { Text(t(k)) }, colors = navColors) } } } }) { pad ->
+    // Existing pages keep their place; Quran and Dhikr are new pages added before Settings.
+    val items = listOf("home" to "🌙", "calendar" to "📅", "prayer" to "🕌", "quran" to "📜", "dhikr" to "📿", "wisdom" to "📖", "settings" to "⚙️")
+    Scaffold(containerColor = Color.Transparent, modifier = Modifier.appBackground(),
+        bottomBar = { Column { AdSlot()
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), Color.Transparent))))
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                windowInsets = WindowInsets.navigationBars.add(WindowInsets(left = 12.dp, right = 12.dp))) {
+            items.forEachIndexed { i, (k, e) ->
+                val selected = tab == i
+                val source = remember { MutableInteractionSource() }
+                Column(Modifier.weight(1f).height(80.dp)
+                    .clickable(interactionSource = source, indication = null, role = Role.Tab) { tab = i },
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    // Ripple and selection highlight are both clipped to a circle.
+                    Box(Modifier.size(40.dp).clip(CircleShape)
+                        .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                        .indication(source, LocalIndication.current),
+                        contentAlignment = Alignment.Center) { Text(e, fontSize = 18.sp) }
+                    Text(t(k), fontSize = 9.sp, maxLines = 1, softWrap = false,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                }
+            } } } }) { pad ->
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
             Box(Modifier.padding(pad).fillMaxSize().padding(horizontal = 16.dp)) {
-                when (tab) { 0 -> Home(c, st); 1 -> CalendarScreen(c, st); 2 -> PrayerScreen(st); 3 -> Wisdom(c, st); else -> Settings(c, st) }
+                when (tab) { 0 -> Home(c, st); 1 -> CalendarScreen(c, st); 2 -> PrayerScreen(st); 3 -> QuranScreen(c, st)
+                    4 -> DhikrScreen(c, st); 5 -> Wisdom(c, st); else -> Settings(c, st) }
             }
         }
     }
@@ -585,9 +690,39 @@ private fun clampDate(d: LocalDate): LocalDate = when {
         // View Layout Toggle (Horizontal Cards vs Vertical List)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${shown.size} ${t("wisdom")}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ThemedChip(!isHorizontalCards, { isHorizontalCards = false }, { Text("☰ " + t("list_view")) })
-                ThemedChip(isHorizontalCards, { isHorizontalCards = true }, { Text("⬌ " + t("cards_view")) })
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+            ) {
+                Row(modifier = Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(if (!isHorizontalCards) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clickable { isHorizontalCards = false }
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        VerticalListIcon(
+                            tint = if (!isHorizontalCards) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(if (isHorizontalCards) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clickable { isHorizontalCards = true }
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        HorizontalCardsIcon(
+                            tint = if (isHorizontalCards) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
         }
 
@@ -678,10 +813,16 @@ private fun clampDate(d: LocalDate): LocalDate = when {
 }
 
 @Composable fun LessonDialog(l: Lesson, st: AppState, close: () -> Unit) {
-    AlertDialog(onDismissRequest = close, title = { Text(l.title) },
-        confirmButton = { TextButton(close) { Text(t("done")) } },
+    val tts = rememberTtsManager()
+    val fullText = "${l.title}. ${l.takeaway}. ${l.body}. " + t("practice") + l.action + (l.question?.let { ". " + t("reflect") + it } ?: "")
+    DisposableEffect(l.id) {
+        onDispose { tts.stop() }
+    }
+    AlertDialog(onDismissRequest = { tts.stop(); close() }, title = { Text(l.title) },
+        confirmButton = { TextButton({ tts.stop(); close() }) { Text(t("done")) } },
         dismissButton = { TextButton({ st.toggleSaved(l.id) }) { Text(if (l.id in st.saved) t("saved") else t("save")) } },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            TtsPlayerBar(text = fullText, lang = st.lang.value, utteranceId = "lesson_${l.id}", tts = tts)
             Text(typeFull(l.type, st.lang.value), style = MaterialTheme.typography.labelMedium)
             if (l.machineTranslated) Text("Machine-translated; awaiting human review.", color = MaterialTheme.colorScheme.tertiary)
             Text(l.takeaway, style = MaterialTheme.typography.titleMedium); Text(l.body)
@@ -705,6 +846,141 @@ private fun clampDate(d: LocalDate): LocalDate = when {
     }
 }
 
+/** About & privacy, shown at the bottom of Settings. Wording must match the hosted privacy policy and the Play Data safety form. */
+@Composable private fun AboutCard() {
+    val ctx = LocalContext.current
+    val version = remember {
+        try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
+    }
+    GlassCard {
+        Text(t("about_title"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        if (version.isNotEmpty()) Text("${t("about_version")} $version", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        listOf("about_what" to "about_what_h", "about_content" to "about_content_h",
+            "about_privacy" to "about_privacy_h", "about_ads" to "about_ads_h").forEach { (body, head) ->
+            Spacer(Modifier.height(4.dp))
+            Text(t(head), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            Text(t(body), style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(t("about_policy"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+    }
+}
+
+
+/** Premium status, upgrade entry and subscription management, shown at the top of Settings. */
+@Composable private fun PremiumCard() {
+    val ctx = LocalContext.current
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("⭐", fontSize = 18.sp)
+            Text(t("premium_title"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        }
+        if (Billing.isPremium) {
+            Text(t("premium_active"), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            // Cancelled but still inside the paid period or trial: access continues until it ends.
+            if (!Billing.autoRenewing) Text(t("premium_cancelled"), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton({ Billing.manage(ctx) }, Modifier.fillMaxWidth()) { Text(t("premium_manage")) }
+        } else {
+            Text(t("premium_pitch"), style = MaterialTheme.typography.bodySmall)
+            if (Billing.pending) Text(t("premium_pending"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+            Button({ Billing.paywall = true }, Modifier.fillMaxWidth()) { Text(t("premium_upgrade")) }
+            TextButton({ Billing.restore() }, Modifier.fillMaxWidth()) { Text(t("premium_restore")) }
+        }
+        Billing.messageKey?.let { Text(t(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+    }
+}
+
+/** Plan picker. Shows price, billing period, trial and cancellation terms before the purchase button, as Play policy requires. */
+@Composable fun PaywallDialog() {
+    if (!Billing.paywall) return
+    val ctx = LocalContext.current
+    val activity = generateSequence(ctx) { (it as? ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()
+    var selected by remember { mutableStateOf(Billing.PLAN_YEARLY) }
+    val plan = Billing.plans.firstOrNull { it.basePlanId == selected } ?: Billing.plans.firstOrNull()
+    AlertDialog(
+        onDismissRequest = { Billing.paywall = false },
+        title = { Text("⭐ " + t("premium_title")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(t("premium_benefit_ads")); Text(t("premium_benefit_voices")); Text(t("premium_benefit_themes"))
+                if (Billing.plans.isEmpty()) {
+                    Text(t("premium_unavailable"), color = MaterialTheme.colorScheme.error)
+                } else {
+                    Billing.plans.forEach { p ->
+                        val yearly = p.basePlanId == Billing.PLAN_YEARLY
+                        val trial = p.trialDays
+                        ThemedChip(selected == p.basePlanId, { selected = p.basePlanId }, {
+                            Column(Modifier.padding(vertical = 6.dp)) {
+                                Text(t(if (yearly) "premium_yearly" else "premium_monthly") + " · " + p.price + " " + t(if (yearly) "premium_per_year" else "premium_per_month"),
+                                    fontWeight = FontWeight.Bold)
+                                if (trial != null) Text(t("premium_trial").replace("{n}", trial.toString()), style = MaterialTheme.typography.bodySmall)
+                            }
+                        })
+                    }
+                    if (plan != null) {
+                        val trial = plan.trialDays
+                        val period = t(if (plan.basePlanId == Billing.PLAN_YEARLY) "premium_per_year" else "premium_per_month")
+                        Text(
+                            (if (trial != null) t("premium_terms_trial").replace("{n}", trial.toString()) + " " else "") +
+                                t("premium_terms").replace("{price}", plan.price).replace("{period}", period),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Billing.messageKey?.let { Text(t(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+                TextButton({ Billing.restore() }) { Text(t("premium_restore")) }
+            }
+        },
+        confirmButton = {
+            Button({ if (plan != null && activity != null) Billing.purchase(activity, plan) }, enabled = plan != null) {
+                Text(t(if (plan?.trialDays != null) "premium_start_trial" else "premium_subscribe"))
+            }
+        },
+        dismissButton = { TextButton({ Billing.paywall = false }) { Text(t("close")) } }
+    )
+}
+
+@Composable private fun VoiceSettingsCard(lang: String) {
+    val tts = rememberTtsManager()
+    val premium = Billing.isPremium
+    val chosen = if (premium) tts.selectedVoice[lang].orEmpty() else ""
+    val ready = tts.isReady.value
+    var options by remember { mutableStateOf(emptyList<TextToSpeechManager.VoiceOption>()) }
+    // The engine's voice list can arrive slightly after it reports ready, so retry briefly.
+    LaunchedEffect(lang, ready) {
+        options = emptyList()
+        if (!ready) return@LaunchedEffect
+        repeat(20) {
+            val found = tts.voiceOptions(lang)
+            if (found.isNotEmpty()) { options = found; return@LaunchedEffect }
+            kotlinx.coroutines.delay(250)
+        }
+    }
+    val sample = when (lang) {
+        "ar" -> "بسم الله الرحمن الرحيم"
+        "ur" -> "بسم اللہ الرحمٰن الرحیم"
+        else -> "In the name of Allah, the Most Gracious, the Most Merciful."
+    }
+    GlassCard {
+        Text(t("voice"), fontWeight = FontWeight.Bold)
+        Text(t("voice_help"), style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ThemedChip(chosen.isEmpty(), { tts.setVoice(lang, "") }, { Text(t("voice_default"), maxLines = 1) })
+            options.forEachIndexed { i, o ->
+                val icon = when (o.gender) { "male" -> "♂ "; "female" -> "♀ "; else -> "" }
+                val name = if (o.key.startsWith("pitch:")) t(if (o.gender == "male") "voice_male" else "voice_female")
+                           else "${t("voice_short")} ${i + 1}"
+                ThemedChip(chosen == o.key,
+                    { if (premium) tts.setVoice(lang, o.key) else Billing.paywall = true },
+                    { Text((if (premium) "" else "🔒 ") + icon + name, maxLines = 1) })
+            }
+        }
+        OutlinedButton({ tts.stop(); tts.speak(sample, lang, "NOOR_VOICE_TEST") }, Modifier.fillMaxWidth()) {
+            Text("🔊  ${t("voice_test")}")
+        }
+    }
+}
+
 @Composable fun Settings(c: Content, st: AppState) {
     val ctx = LocalContext.current; val lang = st.lang.value
     var denied by remember { mutableStateOf(false) }
@@ -720,9 +996,11 @@ private fun clampDate(d: LocalDate): LocalDate = when {
     val lesson = lessonOfDay(c.lessons(lang))
     Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 24.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         PageTitle(t("settings"), t("settings_sub"))
+        PremiumCard()
         GlassCard { Text(t("language"), fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 languages.forEach { (code, label) -> ThemedChip(lang == code, { st.setLang(code) }, { Text(label) }) } } }
+        VoiceSettingsCard(lang)
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("🎨", fontSize = 18.sp)
@@ -774,7 +1052,9 @@ private fun clampDate(d: LocalDate): LocalDate = when {
                 contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp)
             ) {
                 items(Palettes) { pal ->
-                    val isSelected = st.palette.value == pal.id
+                    // Without Premium the app falls back to Classic, so the ring follows the palette actually in use.
+                    val inUse = if (st.palette.value in FreePaletteIds || Billing.isPremium) st.palette.value else Palettes[0].id
+                    val isSelected = inUse == pal.id
                     Box(
                         modifier = Modifier
                             .size(44.dp)
@@ -786,10 +1066,11 @@ private fun clampDate(d: LocalDate): LocalDate = when {
                                         else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                 shape = CircleShape
                             )
-                            .clickable { st.setPalette(pal.id) },
+                            .clickable { if (pal.id in FreePaletteIds || Billing.isPremium) st.setPalette(pal.id) else Billing.paywall = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (isSelected) Text("✓", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        if (pal.id !in FreePaletteIds && !Billing.isPremium) Text("🔒", fontSize = 16.sp)
+                        else if (isSelected) Text("✓", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -836,6 +1117,6 @@ private fun clampDate(d: LocalDate): LocalDate = when {
                 Text("${if (st.adj.intValue > 0) "+" else ""}${st.adj.intValue} ${t("days")}")
                 OutlinedButton({ st.setAdj(st.adj.intValue + 1) }) { Text("+") } }
             Text(t("adj_help"), style = MaterialTheme.typography.bodySmall) }
-        GlassCard { Text(t("about_title"), fontWeight = FontWeight.Bold); Text(t("about_text")) }
+        AboutCard()
     }
 }

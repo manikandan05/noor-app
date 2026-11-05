@@ -46,7 +46,7 @@ object Ads {
 
 /** Adaptive banner above the bottom menu. Collapses when there is no ad (offline, no fill, no consent). */
 @Composable fun AdSlot() {
-    if (!Ads.ready) return
+    if (!Ads.ready || Billing.isPremium) return
     val ctx = LocalContext.current
     val widthDp = LocalConfiguration.current.screenWidthDp
     val size = remember(widthDp) { AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(ctx, widthDp) }

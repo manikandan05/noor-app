@@ -19,7 +19,11 @@ import android.os.Looper
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,7 +39,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -85,24 +93,86 @@ private fun countdown(from: LocalDateTime, to: LocalDateTime): String {
     }
 }
 
-/** One row per prayer for [date]. [highlight] marks the upcoming one. */
-@Composable fun PrayerRows(cfg: PrayerConfig, date: LocalDate, lang: String, highlight: Prayer? = null) {
+/** The five obligatory prayers tracked per day. Asr (standard) and Asr (Hanafi) share the "asr" key. */
+private val Tracked = mapOf(Prayer.FAJR to "fajr", Prayer.DHUHR to "dhuhr", Prayer.ASR to "asr", Prayer.ASR_HANAFI to "asr", Prayer.MAGHRIB to "maghrib", Prayer.ISHA to "isha")
+
+/**
+ * One row per prayer for [date]. [highlight] marks the upcoming one.
+ * When [tracker] is given, each obligatory prayer also gets a check circle (tap to mark as prayed) and a "Now" badge on the highlighted row.
+ */
+@Composable fun PrayerRows(cfg: PrayerConfig, date: LocalDate, lang: String, highlight: Prayer? = null, tracker: AppState? = null) {
     val loc = localeOf(lang)
     val times = remember(cfg, date) { cfg.times(date) }
+    val done = tracker?.prayedOn(date) ?: emptySet()
+    val cs = MaterialTheme.colorScheme
     Prayer.entries.forEach { p ->
         val on = p == highlight
+        val key = Tracked[p]
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else androidx.compose.ui.graphics.Color.Transparent)
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .background(if (on) Brush.horizontalGradient(listOf(cs.primary.copy(alpha = 0.22f), cs.secondary.copy(alpha = 0.08f))) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent)))
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(prayerName(lang, p), fontWeight = if (on) FontWeight.Bold else FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
+                if (tracker != null && key != null) {
+                    val ok = key in done
+                    Box(Modifier.size(26.dp).clip(CircleShape)
+                        .background(if (ok) Brush.linearGradient(listOf(cs.secondary, cs.primary)) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .border(BorderStroke(1.5.dp, if (ok) Color.Transparent else cs.onSurface.copy(alpha = 0.35f)), CircleShape)
+                        .clickable { tracker.togglePrayed(date, key) }, contentAlignment = Alignment.Center) {
+                        if (ok) Text("✓", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                } else if (tracker != null) Spacer(Modifier.size(26.dp))
+                Text(prayerName(lang, p), fontWeight = if (on) FontWeight.Bold else FontWeight.Medium)
+                if (on && tracker != null) Text(t("next_prayer"), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = cs.onPrimary,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(cs.primary).padding(horizontal = 8.dp, vertical = 2.dp))
+            }
             Text(fmtTime(times[p], loc), fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                color = if (on) cs.primary else cs.onSurface)
         }
     }
 }
+
+/** Circular progress ring for the day's tracked prayers, with a "mark all as prayed" shortcut. */
+@Composable private fun PrayerProgressCard(st: AppState, date: LocalDate) {
+    val keys = Tracked.values.distinct()
+    val done = st.prayedOn(date).count { it in keys }
+    val frac = done / keys.size.toFloat()
+    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    val a = MaterialTheme.colorScheme.secondary; val b = MaterialTheme.colorScheme.primary
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val w = 10.dp.toPx(); val inset = w / 2
+                    val sz = Size(size.width - w, size.height - w)
+                    drawArc(track, 0f, 360f, false, Offset(inset, inset), sz, style = Stroke(w))
+                    if (frac > 0f) drawArc(Brush.sweepGradient(listOf(a, b, a)), -90f, 360f * frac, false, Offset(inset, inset), sz, style = Stroke(w, cap = StrokeCap.Round))
+                }
+                Text(if (done == keys.size) "✓" else "$done/${keys.size}", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SectionLabel(t("daily_progress"))
+                Text(t("prayed_count").replace("{n}", "$done").replace("{m}", "${keys.size}"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text(t("tracker_help"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
+        }
+        if (!date.isAfter(LocalDate.now())) {
+            Button({ st.markAllPrayed(date, keys) }, Modifier.fillMaxWidth(), enabled = done < keys.size, shape = RoundedCornerShape(50)) { Text(t("mark_all_prayed")) }
+        }
+    }
+}
+
+/** Colours for one compass skin; the dial gradient, rim, ticks and needle are all drawn from these. */
+private class QiblaSkin(val id: String, val nameKey: String, val dial: List<Color>, val rim: Color, val tick: Color, val label: Color, val north: Color, val needle: Color)
+private val QiblaSkins = listOf(
+    QiblaSkin("green", "skin_green", listOf(Color(0xFF0F5B3F), Color(0xFF0A3D2B)), Color(0xFFD4AF37), Color(0xFFD4AF37), Color(0xFFF3E6B3), Color(0xFFFFD54F), Color(0xFF2DD498)),
+    QiblaSkin("rose", "skin_rose", listOf(Color(0xFF2B2B33), Color(0xFF15151A)), Color(0xFFB71C1C), Color(0xFFEEEEEE), Color(0xFFEEEEEE), Color(0xFFFF5252), Color(0xFFE53935)),
+    QiblaSkin("minimal", "skin_minimal", listOf(Color(0xFFFFFFFF), Color(0xFFF1F5F4)), Color(0xFF1FA67A), Color(0xFF90A4AE), Color(0xFF37474F), Color(0xFFE53935), Color(0xFF1FA67A)),
+    QiblaSkin("antique", "skin_antique", listOf(Color(0xFFF3E3BE), Color(0xFFD9BE85)), Color(0xFF8D6E2F), Color(0xFF6D4C1F), Color(0xFF4E342E), Color(0xFF9E2A2B), Color(0xFF8D6E2F)),
+    QiblaSkin("dark", "skin_dark", listOf(Color(0xFF1A1A1A), Color(0xFF000000)), Color(0xFFC9A227), Color(0xFFC9A227), Color(0xFFE0C36A), Color(0xFFFFD54F), Color(0xFFC9A227))
+)
 
 @SuppressLint("MissingPermission")
 private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
@@ -187,7 +257,7 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
         LocationCard(st)
         val cfg = st.prayerCfg
         if (cfg != null) {
-            if (sub == "times") TimesSection(st, cfg, lang) else QiblaSection(cfg)
+            if (sub == "times") TimesSection(st, cfg, lang) else QiblaSection(st, cfg)
         }
     }
 }
@@ -201,6 +271,7 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
     val rtl = isRtl(lang)
 
     NextPrayerCard(st)
+    PrayerProgressCard(st, date)
 
     GlassCard {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -213,7 +284,7 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
             TextButton({ date = date.plusDays(1) }) { Text(if (rtl) "‹" else "›", fontSize = 20.sp) }
         }
         if (date != LocalDate.now()) TextButton({ date = LocalDate.now() }, Modifier.align(Alignment.CenterHorizontally)) { Text("📍 " + t("today_btn")) }
-        PrayerRows(cfg, date, lang, highlight = if (date == now.toLocalDate()) next?.first else null)
+        PrayerRows(cfg, date, lang, highlight = if (date == now.toLocalDate()) next?.first else null, tracker = st)
         Text(t("prayer_note"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
     }
 
@@ -301,7 +372,7 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
     return heading
 }
 
-@Composable private fun QiblaSection(cfg: PrayerConfig) {
+@Composable private fun QiblaSection(st: AppState, cfg: PrayerConfig) {
     val ctx = LocalContext.current
     val bearing = remember(cfg.lat, cfg.lon) { Qibla.bearing(cfg.lat, cfg.lon) }
     val hasCompass = remember { ctx.getSystemService(SensorManager::class.java).getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null }
@@ -309,31 +380,42 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
     val h = heading
     // Signed shortest turn from where the phone points to the Qibla: positive = turn right.
     val diff = h?.let { ((bearing.toFloat() - it + 540f) % 360f) - 180f }
-    val ring = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+    val skin = QiblaSkins.firstOrNull { it.id == st.qiblaSkin.value } ?: QiblaSkins[0]
     val prim = MaterialTheme.colorScheme.primary
-    val north = MaterialTheme.colorScheme.error
+    val aligned = diff != null && abs(diff) <= 3f
 
     GlassCard {
         Text(t("qibla_direction"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
         Text("${bearing.roundToInt()}°", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-        Box(Modifier.size(280.dp).align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxSize().rotate(-(h ?: 0f))) {
+        Box(Modifier.size(290.dp).align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
+            // Halo that lights up in the skin's needle colour while the phone faces the Qibla.
+            Canvas(Modifier.fillMaxSize()) {
+                if (aligned) drawCircle(Brush.radialGradient(listOf(skin.needle.copy(alpha = 0.55f), Color.Transparent), center, size.minDimension / 2f), size.minDimension / 2f, center)
+            }
+            Box(Modifier.size(262.dp).rotate(-(h ?: 0f))) {
                 Canvas(Modifier.fillMaxSize()) {
                     val c = center; val rad = size.minDimension / 2f - 2.dp.toPx()
-                    drawCircle(ring, rad, c, style = Stroke(3.dp.toPx()))
+                    drawCircle(Brush.radialGradient(skin.dial, c, rad), rad, c)
+                    drawCircle(skin.rim, rad, c, style = Stroke(4.dp.toPx()))
                     for (i in 0 until 72) {
                         val a = Math.toRadians(i * 5.0); val long = i % 9 == 0
                         val len = if (long) 14.dp.toPx() else 7.dp.toPx()
-                        drawLine(ring, Offset(c.x + (rad - len) * sin(a).toFloat(), c.y - (rad - len) * cos(a).toFloat()),
+                        drawLine(skin.tick.copy(alpha = if (long) 1f else 0.6f), Offset(c.x + (rad - len) * sin(a).toFloat(), c.y - (rad - len) * cos(a).toFloat()),
                             Offset(c.x + rad * sin(a).toFloat(), c.y - rad * cos(a).toFloat()), 2.dp.toPx())
                     }
                 }
-                Text("N", Modifier.align(Alignment.TopCenter).padding(top = 18.dp), fontWeight = FontWeight.Bold, color = north)
-                Text("E", Modifier.align(Alignment.CenterEnd).padding(end = 18.dp), fontWeight = FontWeight.Bold)
-                Text("S", Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp), fontWeight = FontWeight.Bold)
-                Text("W", Modifier.align(Alignment.CenterStart).padding(start = 18.dp), fontWeight = FontWeight.Bold)
+                Text("N", Modifier.align(Alignment.TopCenter).padding(top = 18.dp), fontWeight = FontWeight.Bold, color = skin.north)
+                Text("E", Modifier.align(Alignment.CenterEnd).padding(end = 18.dp), fontWeight = FontWeight.Bold, color = skin.label)
+                Text("S", Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp), fontWeight = FontWeight.Bold, color = skin.label)
+                Text("W", Modifier.align(Alignment.CenterStart).padding(start = 18.dp), fontWeight = FontWeight.Bold, color = skin.label)
                 Box(Modifier.fillMaxSize().rotate(bearing.toFloat())) {
-                    Text("🕋", Modifier.align(Alignment.TopCenter).padding(top = 44.dp), fontSize = 30.sp)
+                    // Needle from the centre toward the Kaaba marker.
+                    Canvas(Modifier.fillMaxSize()) {
+                        val c = center
+                        drawLine(skin.needle, c, Offset(c.x, c.y - size.minDimension * 0.30f), 5.dp.toPx(), StrokeCap.Round)
+                        drawCircle(skin.needle, 7.dp.toPx(), c)
+                    }
+                    Text("🕋", Modifier.align(Alignment.TopCenter).padding(top = 40.dp), fontSize = 30.sp)
                 }
             }
             // Fixed marker: the direction the top of the phone points.
@@ -344,12 +426,11 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
                 drawPath(p, prim)
             }
         }
-        val aligned = diff != null && abs(diff) <= 3f
         Text(
             when {
                 !hasCompass -> t("qibla_no_compass")
                 diff == null -> t("qibla_calibrating")
-                aligned -> "✓ " + t("qibla_aligned")
+                aligned -> "✓ " + t("facing_mecca")
                 diff > 0 -> t("qibla_turn_right").replace("{n}", "${abs(diff).roundToInt()}")
                 else -> t("qibla_turn_left").replace("{n}", "${abs(diff).roundToInt()}")
             },
@@ -357,5 +438,18 @@ private fun requestLocation(ctx: Context, onDone: (Location?) -> Unit) {
             color = if (aligned) prim else MaterialTheme.colorScheme.onSurface
         )
         Text(t("qibla_hint"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(t("qibla_skin"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(QiblaSkins) { sk ->
+                val sel = sk.id == skin.id
+                Column(Modifier.clickable { st.setQiblaSkin(sk.id) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(Modifier.size(48.dp).clip(CircleShape).background(Brush.radialGradient(sk.dial))
+                        .border(BorderStroke(if (sel) 3.dp else 1.5.dp, if (sel) prim else sk.rim), CircleShape), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(width = 3.dp, height = 20.dp).clip(RoundedCornerShape(2.dp)).background(sk.needle))
+                    }
+                    Text(t(sk.nameKey), fontSize = 10.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+                }
+            }
+        }
     }
 }
